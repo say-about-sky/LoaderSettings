@@ -1,0 +1,30 @@
+# ---------------------------------------------------------------------------
+# Generated content (all reproducible from tools\*.ps1): never commit.
+# ---------------------------------------------------------------------------
+out/
+final-smali/
+merge-work/
+
+# local captures / third-party asset backups
+backups/
+assets/
+
+# nested gradle project
+LongPressMoveArmy/build/
+LongPressMoveArmy/.gradle/
+LongPressMoveArmy/bin/
+
+# binaries / logs
+*.log
+*.dex
+*.class
+*.jar
+!LongPressMoveArmy/gradle/wrapper/gradle-wrapper.jar
+
+# local machine settings (JDK / Android SDK paths); see tools\env.ps1
+env.local.ps1
+
+# IDE / local environment
+.idea/
+*.iml
+local.properties

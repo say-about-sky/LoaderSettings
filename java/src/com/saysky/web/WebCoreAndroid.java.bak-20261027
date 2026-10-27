@@ -1,0 +1,565 @@
+package com.saysky.web;
+
+import android.app.Activity;
+import android.graphics.Color;
+import android.net.Uri;
+import android.os.Handler;
+import android.os.Looper;
+import android.view.MotionEvent;
+import android.view.SurfaceView;
+import android.view.View;
+import android.view.ViewGroup;
+import android.webkit.ConsoleMessage;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
+
+import java.io.File;
+import java.util.List;
+
+import aoc.kingdoms.lukasz.jakowski.CFG;
+import aoc.kingdoms.lukasz.jakowski.Game;
+import aoc.kingdoms.lukasz.jakowski.Renderer.Renderer;
+import aoc.kingdoms.lukasz.menu.Menu;
+import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.utils.viewport.Viewport;
+
+/**
+ * Android implementation: one reusable WebView + one native dialog frame.
+ *
+ * <p>Thread rules:</p>
+ * <ul>
+ *   <li>onFrame / Menu APIs: GL (game) thread.</li>
+ *   <li>WebView creation / layout / loadUrl / reload: Android UI thread.</li>
+ *   <li>JS bridge calls: JavaBridge thread (WebBridge posts back to the game thread).</li>
+ * </ul>
+ */
+public final class WebCoreAndroid {
+
+    private static final Handler UI = new Handler(Looper.getMainLooper());
+
+    private static volatile Activity activity;
+    private static volatile View glView;
+    private static volatile WebView webView;
+    private static volatile TouchBlocker blocker;
+    private static volatile WebDialogMenu menu;
+    private static volatile String currentPluginId = "";
+    private static volatile String currentEntry = "";
+    private static volatile boolean webShown;
+    private static volatile boolean pageLoaded;
+    private static volatile boolean webFailureLogged;
+    private static volatile int[] lastRect = new int[]{Integer.MIN_VALUE, Integer.MIN_VALUE, -1, -1};
+
+    private WebCoreAndroid() {
+    }
+
+    /* ------------------------------------------------------------ lifecycle */
+
+    public static void ensureStarted() {
+        if (activity != null) {
+            return;
+        }
+        Object app = Gdx.app;
+        if (!(app instanceof Activity)) {
+            throw new IllegalStateException("Gdx.app is not an Activity");
+        }
+        final Activity a = (Activity) app;
+        activity = a;
+        UI.post(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    View root = a.getWindow().getDecorView();
+                    glView = findSurfaceView(root);
+                    WebCore.log("android: glView="
+                            + (glView == null ? "null" : glView.getClass().getName()));
+                } catch (Throwable t) {
+                    WebCore.log("android: find glView failed: " + t);
+                }
+            }
+        });
+    }
+
+    /** Called every rendered frame on the GL thread. */
+    public static void onFrame() {
+        if (activity == null) {
+            ensureStarted();
+        }
+        if (activity == null) {
+            return;
+        }
+        // All plugin page buttons (including the Web UI main-menu row) are mounted by the
+        // unified UI engine; WebMainMenu is kept only as a view-index helper.
+        try {
+            com.saysky.ui.UiHost.tick();
+        } catch (Throwable t) {
+            WebCore.log("ui tick failed: " + t);
+        }
+        syncSurface();
+    }
+
+    /* --------------------------------------------------------------- dialog */
+
+    public static void openDialog(final String pluginId, final String entry, final String title) {
+        if (Gdx.app == null) {
+            return;
+        }
+        Gdx.app.postRunnable(new Runnable() {
+            @Override
+            public void run() {
+                openOnGameThread(pluginId, entry, title);
+            }
+        });
+    }
+
+    private static void openOnGameThread(String pluginId, String entry, String title) {
+        WebCore.PluginInfo p = WebCore.plugin(pluginId);
+        if (p == null) {
+            WebCore.log("openDialog: unknown plugin " + pluginId);
+            return;
+        }
+        String e = (entry == null || entry.length() == 0) ? p.entry : entry;
+        String t = (title == null || title.length() == 0) ? "Web UI" : title;
+
+        List<Menu> active = activeMenu();
+        WebDialogMenu m = menu;
+        if (m == null || !m.matches(pluginId, e, t) || active == null || !active.contains(m)) {
+            if (m != null) {
+                m.setVisible(false);
+            }
+            if (Game.menuManager == null) {
+                WebCore.log("openDialog: MenuManager not ready");
+                return;
+            }
+            int view = WebMainMenu.currentViewIndex();
+            if (view < 0) {
+                view = Game.menuManager.MAINMENU;
+            }
+            if (view < 0) {
+                WebCore.log("openDialog: no active view");
+                return;
+            }
+            m = new WebDialogMenu(t, pluginId, e);
+            Game.menuManager.addNextMenuToView(view, m);
+            menu = m;
+        }
+        m.setVisible(true);
+        currentPluginId = pluginId;
+        currentEntry = e;
+
+        if (active != null) {
+            int idx = active.indexOf(m);
+            if (idx >= 0) {
+                Game.menuManager.setOrderOfMenu(idx);
+            }
+        }
+        WebCore.log("openDialog " + pluginId + "/" + e
+                + " rect=" + m.getPosX() + "," + m.getPosY()
+                + " " + m.getWidth() + "x" + m.getHeight());
+        loadPage(p, e);
+    }
+
+    public static void closeDialog() {
+        if (Gdx.app == null) {
+            return;
+        }
+        Gdx.app.postRunnable(new Runnable() {
+            @Override
+            public void run() {
+                if (menu != null) {
+                    menu.setVisible(false);
+                }
+                hideWeb();
+            }
+        });
+    }
+
+    static void onMenuClosed(WebDialogMenu m) {
+        if (m != null && m == menu) {
+            WebCore.log("dialog closed");
+            hideWeb();
+        }
+    }
+
+    public static void reload(String pluginId) {
+        if (pluginId != null && pluginId.length() > 0
+                && !pluginId.equals(currentPluginId)) {
+            return;
+        }
+        UI.post(new Runnable() {
+            @Override
+            public void run() {
+                WebView w = webView;
+                if (w == null) {
+                    return;
+                }
+                WebCore.log("reload page");
+                try {
+                    w.clearCache(true);
+                } catch (Throwable ignored) {
+                }
+                w.reload();
+            }
+        });
+    }
+
+    public static String status() {
+        WebDialogMenu m = menu;
+        boolean open = m != null && m.getVisible();
+        return "open=" + open + " plugin=" + currentPluginId
+                + " web=" + (webView != null) + " loaded=" + pageLoaded;
+    }
+
+    /* ---------------------------------------------------------------- toast */
+
+    public static void toast(final String message) {
+        if (message == null || Gdx.app == null) {
+            return;
+        }
+        Gdx.app.postRunnable(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    if (Game.menuManager != null) {
+                        Game.menuManager.addToast(message);
+                    }
+                } catch (Throwable t) {
+                    WebCore.log("toast failed: " + t);
+                }
+            }
+        });
+    }
+
+    /* ---------------------------------------------------------- web layout */
+
+    private static void loadPage(WebCore.PluginInfo plugin, String entry) {
+        final File page = new File(plugin.webDir, entry);
+        final String url = Uri.fromFile(page).toString();
+        UI.post(new Runnable() {
+            @Override
+            public void run() {
+                WebView w = ensureWebViewOnUi();
+                if (w == null) {
+                    return;
+                }
+                pageLoaded = false;
+                WebCore.log("loadUrl " + url);
+                w.loadUrl(url);
+            }
+        });
+    }
+
+    /** GL thread: keep the Android WebView over the native dialog content area. */
+    private static void syncSurface() {
+        WebDialogMenu m = menu;
+        if (m == null || !m.getVisible() || !isMenuActive(m)) {
+            hideWeb();
+            return;
+        }
+        int[] r = mapRect(m.getPosX(), m.getPosY(), m.getWidth(), m.getHeight());
+        if (r == null) {
+            hideWeb();
+            return;
+        }
+        if (r[0] == lastRect[0] && r[1] == lastRect[1]
+                && r[2] == lastRect[2] && r[3] == lastRect[3]) {
+            showWeb();
+            return;
+        }
+        lastRect = r;
+        final int[] rr = r;
+        int titleHeight = 0;
+        try {
+            titleHeight = m.getTitle() == null ? 0 : m.getTitle().getHeight();
+        } catch (Throwable ignored) {
+        }
+        int titlePx = Math.round(titleHeight * (r[3] / (float) Math.max(1, m.getHeight())));
+        final int bx = r[0];
+        final int by = r[1] - titlePx;
+        final int bw = r[2];
+        final int bh = r[3] + titlePx;
+        UI.post(new Runnable() {
+            @Override
+            public void run() {
+                TouchBlocker b = blocker;
+                if (b != null) {
+                    b.setRect(bx, by, bw, bh);
+                }
+                WebView w = webView;
+                if (w == null) {
+                    return;
+                }
+                ViewGroup.LayoutParams lp = w.getLayoutParams();
+                if (lp instanceof FrameLayout.LayoutParams) {
+                    FrameLayout.LayoutParams f = (FrameLayout.LayoutParams) lp;
+                    f.leftMargin = rr[0];
+                    f.topMargin = rr[1];
+                    f.width = rr[2];
+                    f.height = rr[3];
+                    w.setLayoutParams(f);
+                }
+                if (!webShown) {
+                    w.setVisibility(View.VISIBLE);
+                    if (b != null) {
+                        b.setVisibility(View.VISIBLE);
+                    }
+                    webShown = true;
+                }
+            }
+        });
+    }
+
+    private static void showWeb() {
+        if (webShown) {
+            return;
+        }
+        webShown = true;
+        UI.post(new Runnable() {
+            @Override
+            public void run() {
+                WebView w = webView;
+                if (w != null && webShown) {
+                    w.setVisibility(View.VISIBLE);
+                    TouchBlocker b = blocker;
+                    if (b != null) {
+                        b.setVisibility(View.VISIBLE);
+                    }
+                }
+            }
+        });
+    }
+
+    private static void hideWeb() {
+        if (!webShown) {
+            return;
+        }
+        webShown = false;
+        UI.post(new Runnable() {
+            @Override
+            public void run() {
+                WebView w = webView;
+                if (w != null && !webShown) {
+                    w.setVisibility(View.GONE);
+                }
+                TouchBlocker b = blocker;
+                if (b != null && !webShown) {
+                    b.setVisibility(View.GONE);
+                }
+            }
+        });
+    }
+
+    private static boolean isMenuActive(WebDialogMenu m) {
+        List<Menu> active = activeMenu();
+        return active != null && active.contains(m);
+    }
+
+    private static List<Menu> activeMenu() {
+        try {
+            return Game.menuManager == null ? null : Game.menuManager.getActiveMenu();
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /* --------------------------------------------------------- coordinates */
+
+    private static int[] mapRect(int gx, int gy, int gw, int gh) {
+        View gl = glView;
+        if (gl == null && activity != null) {
+            gl = activity.getWindow().getDecorView();
+        }
+        if (gl == null || gl.getWidth() <= 0 || gl.getHeight() <= 0) {
+            return null;
+        }
+        if (CFG.GAME_WIDTH <= 0 || CFG.GAME_HEIGHT <= 0) {
+            return null;
+        }
+        int[] loc = new int[2];
+        try {
+            gl.getLocationOnScreen(loc);
+        } catch (Throwable t) {
+            loc[0] = 0;
+            loc[1] = 0;
+        }
+        float vx = 0.0f;
+        float vy = 0.0f;
+        float vw = gl.getWidth();
+        float vh = gl.getHeight();
+        try {
+            Viewport vp = Renderer.viewport;
+            if (vp != null && vp.getScreenWidth() > 0 && vp.getScreenHeight() > 0) {
+                vx = vp.getScreenX();
+                vy = vp.getScreenY();
+                vw = vp.getScreenWidth();
+                vh = vp.getScreenHeight();
+            }
+        } catch (Throwable ignored) {
+        }
+        float sx = vw / (float) CFG.GAME_WIDTH;
+        float sy = vh / (float) CFG.GAME_HEIGHT;
+        int x = Math.round(loc[0] + vx + gx * sx);
+        int top = Math.round(loc[1] + (gl.getHeight() - vy - vh));
+        int y = Math.round(top + gy * sy);
+        int w = Math.max(1, Math.round(gw * sx));
+        int h = Math.max(1, Math.round(gh * sy));
+        return new int[]{x, y, w, h};
+    }
+
+    /* ------------------------------------------------------------- webview */
+
+    private static WebView ensureWebViewOnUi() {
+        if (webView != null) {
+            return webView;
+        }
+        Activity a = activity;
+        if (a == null) {
+            return null;
+        }
+        try {
+            if (blocker == null) {
+                TouchBlocker b = new TouchBlocker(a);
+                FrameLayout.LayoutParams blp = new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT);
+                a.addContentView(b, blp);
+                b.setVisibility(View.GONE);
+                blocker = b;
+            }
+
+            WebView w = new WebView(a);
+            w.setBackgroundColor(Color.rgb(0x12, 0x18, 0x21));
+
+            WebSettings s = w.getSettings();
+            s.setJavaScriptEnabled(true);
+            s.setDomStorageEnabled(true);
+            s.setAllowFileAccess(true);
+            s.setAllowContentAccess(true);
+            try {
+                s.setAllowFileAccessFromFileURLs(true);
+            } catch (Throwable ignored) {
+            }
+            try {
+                s.setAllowUniversalAccessFromFileURLs(true);
+            } catch (Throwable ignored) {
+            }
+            s.setCacheMode(WebSettings.LOAD_NO_CACHE);
+            s.setSupportZoom(false);
+            s.setBuiltInZoomControls(false);
+
+            w.setHorizontalScrollBarEnabled(false);
+            w.setVerticalScrollBarEnabled(false);
+            try {
+                WebView.setWebContentsDebuggingEnabled(true);
+            } catch (Throwable ignored) {
+            }
+
+            w.addJavascriptInterface(new WebBridge(), "AOH3");
+            w.setWebViewClient(new WebViewClient() {
+                @Override
+                @SuppressWarnings("deprecation")
+                public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                    return !(url != null && url.startsWith("file://"));
+                }
+
+                @Override
+                public void onPageFinished(WebView view, String url) {
+                    pageLoaded = true;
+                    WebCore.log("pageFinished " + url);
+                }
+
+                @Override
+                @SuppressWarnings("deprecation")
+                public void onReceivedError(WebView view, int errorCode,
+                                            String description, String failingUrl) {
+                    WebCore.log("pageError " + errorCode + " " + description + " " + failingUrl);
+                }
+            });
+            w.setWebChromeClient(new WebChromeClient() {
+                @Override
+                public boolean onConsoleMessage(ConsoleMessage cm) {
+                    if (cm != null) {
+                        WebCore.log("console " + cm.message() + " @" + cm.lineNumber());
+                    }
+                    return true;
+                }
+            });
+
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(1, 1);
+            lp.leftMargin = -10000;
+            lp.topMargin = -10000;
+            a.addContentView(w, lp);
+            w.setVisibility(View.GONE);
+            webView = w;
+            webShown = false;
+            lastRect = new int[]{Integer.MIN_VALUE, Integer.MIN_VALUE, -1, -1};
+            WebCore.log("webview created");
+            return w;
+        } catch (Throwable t) {
+            if (!webFailureLogged) {
+                webFailureLogged = true;
+                WebCore.log("create webview failed: " + t);
+            }
+            return null;
+        }
+    }
+
+    private static View findSurfaceView(View v) {
+        if (v == null) {
+            return null;
+        }
+        if (v instanceof SurfaceView) {
+            return v;
+        }
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) {
+                View r = findSurfaceView(g.getChildAt(i));
+                if (r != null) {
+                    return r;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Full-screen transparent layer below the WebView: blocks game input outside the popup. */
+    private static final class TouchBlocker extends View {
+        private int x;
+        private int y;
+        private int w;
+        private int h;
+        private boolean downInside;
+
+        TouchBlocker(Activity activity) {
+            super(activity);
+        }
+
+        void setRect(int x, int y, int w, int h) {
+            this.x = x;
+            this.y = y;
+            this.w = w;
+            this.h = h;
+        }
+
+        @Override
+        public void setVisibility(int visibility) {
+            super.setVisibility(visibility);
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent event) {
+            if (event == null) {
+                return false;
+            }
+            if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+                int rx = (int) event.getRawX();
+                int ry = (int) event.getRawY();
+                downInside = rx >= x && rx < x + w && ry >= y && ry < y + h;
+            }
+            return !downInside;
+        }
+    }
+}

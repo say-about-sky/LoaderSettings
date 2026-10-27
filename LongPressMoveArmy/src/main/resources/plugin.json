@@ -1,0 +1,14 @@
+{
+  "id": "com.saysky.longpressmovearmy",
+  "name": "Quick Actions (Long-Press Move / Double-Tap Box Select)",
+  "version": "1.4.4",
+  "sdkVersion": ">=1.5.0",
+  "hasTweaker": false,
+  "useLuminosity": true,
+  "tweakClasses": [
+    "com.saysky.longpressmovearmy.mixin.MixinMapTouchManager",
+    "com.saysky.longpressmovearmy.mixin.MixinTouch",
+    "com.saysky.longpressmovearmy.mixin.MixinButtonTopOutliner"
+  ],
+  "supportedPlatform": [ "desktop", "android" ]
+}
