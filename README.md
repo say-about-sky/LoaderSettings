@@ -1,5 +1,17 @@
 # LoaderSettings —— 伪3D地图补丁(倾斜版 + 文字倾斜修补,独立 classes.dex)
 
+> **简介**:给《Age of History 3》安卓整合包用的**补丁 dex 工程** —— 伪3D(倾斜)地图与文字倾斜修补,
+> 并附带长按快捷操作(LPA)、小地图/行军线性能优化、剧本任务懒加载、兵牌语音、占领进度滤镜、
+> UI API / Game API 等子项目。
+>
+> **快速开始**:① `build-dex.bat` → ② `out\classes.dex` → ③ `install.ps1 -Folder <解包目录>` 合并进 APK,
+> 重打包签名后冷启动生效(首次构建前按 `tools\env.ps1` / `tools\env.local.ps1` 配好 JDK 与 SDK)。
+> **依赖**(不进版本库):JDK 11+、Android SDK(d8 / `android.jar`)、`loader-1.6.0.jar`、目标包反编译基线。
+> **许可**:GPL-3.0,见 `LICENSE.TXT`。
+> **隐私**:补丁本体不联网、不收集数据;仅 `WebUI` 子项目会创建系统 WebView,插件页面自身可发起网络请求。
+>
+> 各子项目与逐版本记录见下文。
+
 > 本工程原名 `Pseudo3DMap`,v12e(2026-10-17)起更名为 **LoaderSettings**;
 > 同时把 `LongPressMoveArmy`(Quick Actions 快捷操作)源码工程整体迁入本目录(`LoaderSettings\LongPressMoveArmy\`)。
 > 旧目录 `Pseudo3DMap\` 与 `LongPressMoveArmy_bak\` 仅作备份保留,不再参与构建。
