@@ -63,13 +63,7 @@ cd <游戏根>\LoaderSettings
 build-dex.bat
 ```
 
-产物:`LoaderSettings\out\classes.dex`。安装到解包目录:
-
-```powershell
-.\install.ps1 -Folder "<解包目录>"
-```
-
-再重打包 + 签名,冷启动生效。
+产物:`LoaderSettings\out\classes.dex`。本工程不提供自动部署脚本，自行把该 dex 前置合并进 APK 后重打包 + 签名，冷启动生效。
 
 ## 五、从 HOI4 导入语音
 

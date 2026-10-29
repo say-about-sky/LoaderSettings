@@ -4,7 +4,7 @@
 > 并附带长按快捷操作(LPA)、小地图/行军线性能优化、剧本任务懒加载、兵牌语音、占领进度滤镜、
 > UI API / Game API 等子项目。
 >
-> **快速开始**:① `build-dex.bat` → ② `out\classes.dex` → ③ `install.ps1 -Folder <解包目录>` 合并进 APK,
+> **快速开始**:① `build.bat`(或 `build-dex.bat`) → ② `out\classes.dex` → ③ 自行把该 dex 合并进 APK(置最前)、
 > 重打包签名后冷启动生效(首次构建前按 `tools\env.ps1` / `tools\env.local.ps1` 配好 JDK 与 SDK)。
 > **依赖**(不进版本库):JDK 11+、Android SDK(d8 / `android.jar`)、`loader-1.6.0.jar`、目标包反编译基线。
 > **许可**:GPL-3.0,见 `LICENSE.TXT`。
@@ -117,7 +117,6 @@ LoaderSettings\
 │   └─ dex-report-v21-lateperf5.txt ← v21 校验报告(53 类 / 530,432 B,含引导线子系统耗时探针)
 │   └─ dex-report-v21b-lateperf6.txt ← v21b 校验报告(53 类 / 530,480 B,计时改为 1/4 采样)
 ├─ build-dex.bat          ← 自动重建 final-smali 并汇编 → out\classes.dex
-├─ install.ps1            ← 一键:前置合并 dex(自动备份)
 └─ assets\                ← 图标图片(已不安装,仅留档)
 ```
 
@@ -228,13 +227,13 @@ GameApi.event("event_demo.1");
 > **v13 起 baseline 必须包含** `Laoc/kingdoms/lukasz/jakowski/Touch;` 与 `Laoc/kingdoms/lukasz/menu_element/button/ButtonTopOutliner;`(LPA 增量移植的目标类);
 > **v14 起还必须包含** `Laoc/kingdoms/lukasz/map/map/MapBG;`(小地图重建投影修复),否则 `merge.ps1` 会报“缺少目标类”。
 
-## 安装
+## 安装(手动)
+
+本工程**只负责产出** `out\classes.dex`,不提供自动合并/部署脚本。
 
 **PC(解包目录 + 已有管线):**
 
 ```powershell
-.\LoaderSettings\install.ps1 -Folder "<解包目录>"
-# 或手动:
 .\merge-dex.ps1 -Folder "<解包目录>" -PatchDex "<游戏根>\LoaderSettings\out\classes.dex"
 ```
 
@@ -335,8 +334,7 @@ mul-float/2addr v2, v4
   resetScale + renderUI + end×2 + return),保留全部 UI —— 供 HotG3DMapTest 接管地图渲染。
   注意:需要地图做背景的位置(如主菜单背景)也会一并变黑。
 - 旧的 `MAP_TILT` 开关行已由「地图」页替代;`SettingsManager.MAP_TILT` 字段仅保留兼容。
-- 想显式写入 assets:`.\install.ps1 -Folder "<解包目录>" -EditSettings`
-  (本地存档 `files/settings/Settings.txt` 存在时以本地为准)。
+
 
 ## 回退/剔除清单(相对作者原始 smali)
 

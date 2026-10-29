@@ -245,7 +245,7 @@ Start-Process -FilePath "<JDK11+>\bin\java.exe" `
 要点:不是"替换"某个 dex,而是"补丁 dex 占最前 + 原有 dex 全部顺延 +1"。
 
 **每次合并前请先把解包目录恢复成原始状态**(从备份目录 `暮色黄昏_世界大战0.25.1._dexbak_*` 取原始 dex),
-否则会叠加出多个补丁 dex。一键脚本 `<游戏根>\merge-dex.ps1`(或双击 `merge-dex.bat`):
+否则会叠加出多个补丁 dex。（若游戏根目录提供了 `merge-dex.ps1`，它只是用来做这一步的便捷工具，不属于本工程）
 
 ```powershell
 .\merge-dex.ps1                             # 改 GameCivs 下的 0.25.1 解包目录(推荐)

@@ -57,5 +57,4 @@ $dex = Join-Path $proj "out\classes.dex"
 if (-not (Test-Path -LiteralPath $dex)) { Fail "out\classes.dex not produced" }
 Write-Host ""
 Write-Host ("[OK] " + $dex + "  (" + (Get-Item -LiteralPath $dex).Length + " bytes)")
-Write-Host "Install: powershell -ExecutionPolicy Bypass -File install.ps1 -Folder <unpacked apk dir>"
 exit 0
