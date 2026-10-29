@@ -4,6 +4,8 @@
 out/
 final-smali/
 merge-work/
+build/
+.gradle/
 
 # local captures / third-party asset backups
 backups/
@@ -19,6 +21,7 @@ LongPressMoveArmy/bin/
 *.dex
 *.class
 *.jar
+!gradle/wrapper/gradle-wrapper.jar
 !LongPressMoveArmy/gradle/wrapper/gradle-wrapper.jar
 
 # local machine settings (JDK / Android SDK paths); see tools\env.ps1

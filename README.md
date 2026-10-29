@@ -136,8 +136,37 @@ GameApi.event("event_demo.1");
 
 ## 构建(可复现)
 
-> **一键:`build.bat`(或 `build.ps1`)** —— 自动解析 JDK/SDK/游戏根,检查基线(baseline)后跑 `tools\merge.ps1`(含 LPA 合并),
-> 无需手动执行前置步骤;基线缺失时用 `build.ps1 -RefreshBaseline -PackageDir <解包目录>` 从目标 APK 重抽。
+> **一键（唯一入口）**：
+> ```bat
+gradlew.bat build                 rem = dex：检查前置 -> merge.ps1 -> smali -> Java+D8 -> 校验
+>gradlew.bat checkEnv              rem 只检查 JDK / SDK / 游戏根 / 基线
+>gradlew.bat baseline -PpackageDir=<解包目录>   rem 从目标 APK 重抽 merge-work 基线
+>gradlew.bat clean
+>```
+> `build.bat` 只是 `gradlew.bat build` 的批处理包装。依赖解析与路径全部在 `build.gradle` 内完成
+> （Gradle 属性优先，其次环境变量），不再需要记任何脚本参数。
+
+### 构建加速（国内网络）
+
+- 镜像顺序：阿里云 `gradle-plugin` → 阿里云 `public` → 华为云 → `mavenCentral()`（兜底）；
+  `settings.gradle` 的 `pluginManagement` 已给 shadow 插件配镜像（Plugin Portal 国内单个 POM 要 1.9 s）。
+- `gradle.properties` 已开 `daemon / parallel / caching / vfs.watch` + 2 GB 堆，增量构建 1~3 s。
+- Gradle 发行包走腾讯云镜像（3.7 MB/s）。
+- **`dex` 任务不再把子进程输出直连控制台**：`tools\*.ps1` 输出很多，管道缓冲区写满会让构建“假死”（不占 CPU、无新文件）。
+  现在全部写日志，结束时打印尾部 40 行：`out\dex-build.log`（基线刷新：`out\baseline.log`）。实测整条管线 ≈30 s。
+
+### IntelliJ IDEA 运行/调试配置
+
+`.run\` 内的配置打开工程即生效：
+
+| 配置 | 类型 | 作用 |
+|---|---|---|
+| 构建 dex（gradle dex） | Gradle | 跑完整补丁管线 → `out\classes.dex` + `out\ui-api.jar` |
+| 检查前置（gradle checkEnv） | Gradle | 校验 JDK / SDK / 游戏根 / 基线 |
+| 调试游戏（桌面 JDWP 5005） | Remote JVM Debug | 先 `StartFinality-jdwp.bat` 启动游戏再 Debug |
+| 调试游戏（安卓 adb 8700） | Remote JVM Debug | `adb forward tcp:8700 jdwp:<pid>` 后 Debug |
+
+内部步骤（由 Gradle 自动串起来，不需手动执行）：
 
 1. `tools\build-lpa-patch.ps1` —— 用 `loader-1.6.0.jar --launch-mode patch` 展开
    `LongPressMoveArmy` 的 Mixin,反汇编后输出 `merge-work\lpa-patch\lpa-smali\`
@@ -149,11 +178,10 @@ GameApi.event("event_demo.1");
    ③ `tools\build-java.ps1` 编译 `java\src\` 并用 D8 与 smali dex 合并 → `out\classes.dex`;
    ④ `tools\verify-dex.ps1` 对目标包 dex 校验 `unresolved_refs=0`(非 0 直接失败)。
 
-> **工具链路径(不进版本库)**:JDK / Android SDK / 游戏根由 `tools\env.ps1` 解析 ——
-> 优先环境变量 `JAVA_HOME`、`ANDROID_HOME`(或 `ANDROID_SDK_ROOT`)、`AOH_GAME_ROOT`,
-> 其次 `tools\env.local.ps1`(自行创建,**已在 `.gitignore` 中**,可设 `$AohJdkBin` / `$AohSdk` / `$AohGameRoot`),
-> 最后自动探测(游戏根=本工程上一级;JDK=`C:\Program Files\...\jdk-*`;SDK=`%LOCALAPPDATA%\Android\Sdk`)。
-> 各 `apply-patch.ps1` / `refresh-baseline.ps1` / `verify-dex.ps1` 的 `-JavaExe` 缺省同样走 `JAVA_HOME` 或自动探测。
+> **工具链路径(不进版本库)**:由 `build.gradle` 解析并注入子进程 ——
+> 游戏根 `AOH_GAME_ROOT` / `-PgameRoot=`(默认本工程上一级)、
+> SDK `ANDROID_HOME`(或 `ANDROID_SDK_ROOT`) / `-PandroidSdk=`、JDK 取 `JAVA_HOME`(否则自动探测 `C:\Program Files\...\jdk-*`)。
+> `tools\env.ps1` 仍作为内部实现保留:优先上述环境变量,其次 `tools\env.local.ps1`(自行创建,**已在 `.gitignore` 中**),最后自动探测。
 
 ## 目标包基线(必读)
 

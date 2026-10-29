@@ -1,0 +1,150 @@
+// ---------------------------------------------------------------------------
+//  LoaderSettings —— 伪3D 地图补丁 dex 工程
+//
+//  唯一入口（PolarisCore 风格）：
+//      gradlew.bat build                                -> out\classes.dex + out\ui-api.jar
+//      gradlew.bat dex                                  （同上）
+//      gradlew.bat baseline -PpackageDir=<解包目录>      -> 从目标 APK 重抽 merge-work 基线
+//      gradlew.bat checkEnv                             -> 打印/校验前置条件
+//      gradlew.bat clean
+//
+//  说明：本工程的实质工作 = 「smali 增量合并且不破坏目标包基线」，
+//  那部分实现放在 tools\*.ps1（merge.ps1 / build-java.ps1 / verify-dex.ps1）里，
+//  属内部实现细节；对外只需要 gradlew，不再需要记住任何脚本参数。
+//
+//  本地需自备（不进版本库）：
+//      - JDK 11+      JAVA_HOME，或 C:\Program Files\{Microsoft,Java}\jdk-*
+//      - Android SDK  ANDROID_HOME / ANDROID_SDK_ROOT / -PandroidSdk=<dir>（要 build-tools 的 d8 + platforms 的 android.jar）
+//      - 游戏根       AOH_GAME_ROOT / -PgameRoot=<dir>，默认本工程上一级；需含 game.jar 与 .tools\smali\smali-2.5.2.jar
+//      - 目标包基线   merge-work\（首次：gradlew baseline -PpackageDir=<解包目录>）
+// ---------------------------------------------------------------------------
+
+plugins {
+    id 'base'
+}
+
+group = 'com.saysky'
+version = '34'
+
+def gameRoot = System.getenv('AOH_GAME_ROOT') ?: findProperty('gameRoot') ?: rootDir.parentFile
+def androidSdk = System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT') ?: findProperty('androidSdk')
+def jdkHome = System.getenv('JAVA_HOME')
+
+def outDir = file("$projectDir/out")
+def dexFile = file("$outDir/classes.dex")
+def uiApiFile = file("$outDir/ui-api.jar")
+
+def sourceRoots = ['src', 'java', 'merge-work', 'MissionLazyLoad', 'LateGamePerf', 'ArmyVoice',
+                   'LongPressMoveArmy', 'WebUI', 'SiegeTint', 'HotVarApi'].collect { file("$projectDir/$it") }
+
+// 子进程统一注入环境变量（Gradle 属性优先于系统环境）
+// 注意：**不要用 inheritIO** —— 下层 ps1 输出很多，终端/后台任务不消费时会写满管道缓冲，
+//        表现为“构建卡死不动”。统一写日志文件，结束时打印尾部。
+def newProcess = { List<String> cmd, String workDir ->
+    def pb = new ProcessBuilder(cmd)
+    pb.directory(file(workDir))
+    if (jdkHome) pb.environment().put('JAVA_HOME', jdkHome)
+    if (androidSdk) {
+        pb.environment().put('ANDROID_HOME', androidSdk.toString())
+        pb.environment().put('ANDROID_SDK_ROOT', androidSdk.toString())
+    }
+    pb.environment().put('AOH_GAME_ROOT', gameRoot.toString())
+    pb
+}
+
+def runProcess = { List<String> cmd, String workDir, File logFile ->
+    outDir.mkdirs()
+    logFile.parentFile.mkdirs()
+    logFile.withWriter('UTF-8') { it.write('') }
+    def pb = newProcess(cmd, workDir)
+    pb.redirectErrorStream(true)
+    pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile))
+    logger.lifecycle("执行: ${cmd.join(' ')}")
+    logger.lifecycle("日志: ${logFile}（构建中可用编辑器 tail）")
+    def rc = pb.start().waitFor()
+    def lines = logFile.readLines('UTF-8')
+    lines.takeRight(40).each { logger.lifecycle("  | ${it}") }
+    if (lines.size() > 40) logger.lifecycle("  | ...（共 ${lines.size()} 行，完整日志见 ${logFile}）")
+    if (rc != 0) {
+        throw new GradleException("命令失败 (exit ${rc}): ${cmd.join(' ')}；完整日志: ${logFile}")
+    }
+}
+
+tasks.register('checkEnv') {
+    group = 'verification'
+    description = '检查 JDK / Android SDK / 游戏根 / 基线是否就绪'
+    doLast {
+        def problems = []
+        def javaExe = jdkHome ? file("$jdkHome/bin/java.exe") : null
+        if (javaExe == null || !javaExe.exists()) {
+            problems << "JAVA_HOME 未设置或无效（当前: ${jdkHome}）"
+        }
+        if (androidSdk == null) {
+            problems << 'ANDROID_HOME / ANDROID_SDK_ROOT 未设置（也可 -PandroidSdk=<dir>）'
+        } else if (!file(androidSdk).exists()) {
+            problems << "Android SDK 不存在: ${androidSdk}"
+        }
+        if (!file("$gameRoot/game.jar").exists()) {
+            problems << "game.jar 不存在: ${gameRoot}/game.jar（AOH_GAME_ROOT 或 -PgameRoot= 指定游戏根）"
+        }
+        if (!file("$gameRoot/.tools/smali/smali-2.5.2.jar").exists()) {
+            problems << "smali 不存在: ${gameRoot}/.tools/smali/smali-2.5.2.jar"
+        }
+        if (!file("$projectDir/merge-work").exists()) {
+            problems << '基线缺失: merge-work\\（先跑 gradlew baseline -PpackageDir=<解包目录>）'
+        }
+        if (problems) {
+            throw new GradleException('构建前置未满足:\n  - ' + problems.join('\n  - '))
+        }
+        logger.lifecycle("JDK    : ${jdkHome}")
+        logger.lifecycle("SDK    : ${androidSdk}")
+        logger.lifecycle("游戏根 : ${gameRoot}")
+        logger.lifecycle("基线   : ${projectDir}\\merge-work")
+    }
+}
+
+tasks.register('baseline') {
+    group = 'build'
+    description = '从解包后的目标 APK 重抽 merge-work 基线（-PpackageDir=<dir>）'
+    doLast {
+        def packageDir = findProperty('packageDir')
+        if (!packageDir) {
+            throw new GradleException('缺少参数: -PpackageDir=<解包后的 APK 目录>')
+        }
+        if (!file(packageDir as String).exists()) {
+            throw new GradleException("目录不存在: ${packageDir}")
+        }
+        runProcess(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+                    '-File', "$projectDir/build.ps1".toString(),
+                    '-RefreshBaseline', '-PackageDir', packageDir.toString()],
+                projectDir.toString(), file("$outDir/baseline.log"))
+    }
+}
+
+tasks.register('dex') {
+    group = 'build'
+    description = '重建 final-smali + 编译 Java 补丁 + D8 合并 + 校验 -> out\\classes.dex'
+    dependsOn 'checkEnv'
+    inputs.files(sourceRoots.findAll { it.exists() })
+    inputs.property('gameRoot', gameRoot.toString())
+    inputs.property('sdk', androidSdk == null ? '' : androidSdk.toString())
+    outputs.files(dexFile, uiApiFile)
+    outputs.upToDateWhen { false }
+    doLast {
+        outDir.mkdirs()
+        // 只清本次会被覆盖的产物，保留 out\ 里的历史日志
+        [dexFile, uiApiFile].each {
+            if (it.exists() && !it.delete()) throw new GradleException("无法删除 ${it}")
+        }
+        runProcess(['cmd', '/c', 'build-dex.bat'], projectDir.toString(), file("$outDir/dex-build.log"))
+        if (!dexFile.exists()) throw new GradleException("构建结束但未生成 ${dexFile}")
+        logger.lifecycle("产物: ${dexFile} (${dexFile.length()} B)")
+        if (uiApiFile.exists()) logger.lifecycle("产物: ${uiApiFile} (${uiApiFile.length()} B)")
+    }
+}
+
+tasks.named('build') {
+    group = 'build'
+    description = '等同 dex'
+    dependsOn 'dex'
+}
