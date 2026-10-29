@@ -12,7 +12,7 @@
 
 .PARAMETER Folder
   解包后的 APK 目录(必须含 classes*.dex),例:
-  "D:\unpacked\age_of_history3"
+  "<unpacked apk dir>"
 
 .PARAMETER SkipDex
   不合并 dex(仅用于查看/调试)。
@@ -21,7 +21,7 @@
   给 assets\settings\Settings.txt 插入 MAP_TILT: true(本体指令的原要求;默认不加)。
 
 .EXAMPLE
-  .\install.ps1 -Folder "D:\unpacked\age_of_history3"
+  .\install.ps1 -Folder "<unpacked apk dir>"
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Folder,

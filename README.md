@@ -137,7 +137,8 @@ GameApi.event("event_demo.1");
 
 ## 构建(可复现)
 
-> **一键:`build-dex.bat`** —— 现在会自动跑 `tools\merge.ps1`(其中包含 LPA 合并),无需手动执行前置步骤。
+> **一键:`build.bat`(或 `build.ps1`)** —— 自动解析 JDK/SDK/游戏根,检查基线(baseline)后跑 `tools\merge.ps1`(含 LPA 合并),
+> 无需手动执行前置步骤;基线缺失时用 `build.ps1 -RefreshBaseline -PackageDir <解包目录>` 从目标 APK 重抽。
 
 1. `tools\build-lpa-patch.ps1` —— 用 `loader-1.6.0.jar --launch-mode patch` 展开
    `LongPressMoveArmy` 的 Mixin,反汇编后输出 `merge-work\lpa-patch\lpa-smali\`

@@ -83,11 +83,22 @@ if ($needBuild) {
 }
 Write-Host ("[lpa] jar: {0}  ({1})" -f $jar.FullName, $jar.LastWriteTime)
 
+# patch.json 用"相对 merge-work\lpa-patch 的路径"(可移植);跨盘时回退绝对路径
+function To-Rel([string]$baseDir, [string]$absPath) {
+    try {
+        $b = New-Object System.Uri (([IO.Path]::GetFullPath($baseDir).TrimEnd('\')) + '\')
+        $a = New-Object System.Uri ([IO.Path]::GetFullPath($absPath))
+        if ($b.Scheme -ne $a.Scheme) { return $absPath }
+        $rel = $b.MakeRelativeUri($a).ToString()
+        if ($rel -match '^[a-zA-Z][a-zA-Z0-9+.-]*:') { return $absPath }
+        return ([Uri]::UnescapeDataString($rel) -replace '/', '\')
+    } catch { return $absPath }
+}
 $config = [ordered]@{
-    gamePath       = (Join-Path $gameRoot "game.jar") -replace '\\', '/'
-    d8Path         = $d8 -replace '\\', '/'
-    androidLibPath = $androidJar -replace '\\', '/'
-    plugins        = @( $jar.FullName -replace '\\', '/' )
+    gamePath       = (To-Rel $work (Join-Path $gameRoot "game.jar")) -replace '\\', '/'
+    d8Path         = (To-Rel $work $d8) -replace '\\', '/'
+    androidLibPath = (To-Rel $work $androidJar) -replace '\\', '/'
+    plugins        = @( (To-Rel $work $jar.FullName) -replace '\\', '/' )
 }
 $json = $config | ConvertTo-Json -Depth 4
 [IO.File]::WriteAllText($patchJson, $json, (New-Object Text.UTF8Encoding($false)))

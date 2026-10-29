@@ -223,7 +223,7 @@ gradlew.bat shadowJar
 > ⚠ 必须用 **JDK 11+** 运行 loader:loader 的 d8 子进程会调用系统 `java`,
 > Windows 会在"父进程 EXE 所在目录"优先查找 —— 用游戏自带 `jre\bin\java.exe`(Java 8)运行 loader,d8 会因版本过低失败。
 
-> **一键版:双击根目录 `build-dex.bat`** —— 自动挑 JDK 11、显示将要打包的 jar 及其构建时间、调用 loader 生成 `PatchBuild\game.dex.zip`;想换 JDK 可先 `set JAVA11=<jdk11>\bin\java.exe`。
+> **一键版:双击 `HotPluginLoader\build-dex.bat`** —— 自动挑 JDK 11、显示将要打包的 jar 及其构建时间、调用 loader 生成 `HotPluginLoader\out\game.dex.zip`;想换 JDK 可先 `set JAVA11=<jdk11>\bin\java.exe`。
 
 ```powershell
 Start-Process -FilePath "<JDK11+>\bin\java.exe" `
