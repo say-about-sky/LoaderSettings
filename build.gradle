@@ -28,7 +28,45 @@ version = '34'
 
 def gameRoot = System.getenv('AOH_GAME_ROOT') ?: findProperty('gameRoot') ?: rootDir.parentFile
 def androidSdk = System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT') ?: findProperty('androidSdk')
-def jdkHome = System.getenv('JAVA_HOME')
+
+// ---------------------------------------------------------------------------
+// JDK 11+ 发现：管线里的 D8 / javac --release 8 都需要 11+。
+//   IDEA 的 Gradle JVM（= 本进程）经常是 JDK 8，所以**不看本进程**，自己找：
+//   -PjdkHome= > AOH_JDK > JAVA_HOME > Program Files 下的各个 JDK
+// ---------------------------------------------------------------------------
+def isWindows = System.getProperty('os.name').toLowerCase().contains('windows')
+def jdkExe = { File home, String tool -> new File(home, "bin/${tool}${isWindows ? '.exe' : ''}") }
+def isJdk = { File home -> home != null && jdkExe(home, 'javac').exists() }
+def jdkMajorOf = { File home ->
+    def rel = new File(home, 'release')
+    if (rel.exists()) {
+        def m = rel.text =~ /JAVA_VERSION="(\d+)/
+        if (m.find()) return m.group(1) as int
+    }
+    return 0
+}
+def findJdk = { int minMajor ->
+    def found = []
+    def add = { String p -> if (p) { def f = file(p); if (isJdk(f)) found << f } }
+    add(findProperty('jdkHome') as String)
+    add(System.getenv('AOH_JDK'))
+    add(System.getenv('JAVA_HOME'))
+    ['C:/Program Files/Microsoft', 'C:/Program Files/Java', 'C:/Program Files/Eclipse Adoptium',
+     'C:/Program Files/AdoptOpenJDK', 'C:/Program Files/Zulu', 'C:/Program Files/Amazon Corretto',
+     'C:/Program Files/BellSoft'].each { base ->
+        def d = file(base)
+        if (d.isDirectory()) d.listFiles()?.each { sub -> if (isJdk(sub)) found << sub }
+    }
+    // C:\Program Files\Java\latest\jdk-25 这类两层结构
+    found.collect().each { j ->
+        if (j.isDirectory()) j.listFiles()?.each { sub -> if (isJdk(sub)) found << sub }
+    }
+    found.unique().findAll { jdkMajorOf(it) >= minMajor }
+            .sort { a, b -> jdkMajorOf(a) <=> jdkMajorOf(b) }
+            .find()
+}
+def jdk11Home = findJdk(11)
+def jdkHome = jdk11Home != null ? jdk11Home.absolutePath : null
 
 def outDir = file("$projectDir/out")
 def dexFile = file("$outDir/classes.dex")
@@ -75,9 +113,8 @@ tasks.register('checkEnv') {
     description = '检查 JDK / Android SDK / 游戏根 / 基线是否就绪'
     doLast {
         def problems = []
-        def javaExe = jdkHome ? file("$jdkHome/bin/java.exe") : null
-        if (javaExe == null || !javaExe.exists()) {
-            problems << "JAVA_HOME 未设置或无效（当前: ${jdkHome}）"
+        if (jdk11Home == null || !isJdk(jdk11Home)) {
+            problems << 'JDK 11+ 未找到（D8 / javac --release 8 需要）；请设 JAVA_HOME 或 -PjdkHome=<JDK目录>'
         }
         if (androidSdk == null) {
             problems << 'ANDROID_HOME / ANDROID_SDK_ROOT 未设置（也可 -PandroidSdk=<dir>）'

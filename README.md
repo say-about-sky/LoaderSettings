@@ -148,6 +148,9 @@ gradlew.bat build                 rem = dex：检查前置 -> merge.ps1 -> smali
 
 ### 构建加速（国内网络）
 
+- **JDK 11+ 自动发现**：管线里的 D8 与 `javac --release 8` 都要 11+。`build.gradle` 不看 IDEA 的 Gradle JVM，
+  按 `-PjdkHome=` > `AOH_JDK` > `JAVA_HOME` > `Program Files\{Microsoft,Java,...}\jdk-*` 找（取刚好 ≥11 的最小版本），
+  并以 `JAVA_HOME` 注入给 `build-dex.bat`；找不到时 `checkEnv` / `dex` 会直接报错。
 - 镜像顺序：阿里云 `gradle-plugin` → 阿里云 `public` → 华为云 → `mavenCentral()`（兜底）；
   `settings.gradle` 的 `pluginManagement` 已给 shadow 插件配镜像（Plugin Portal 国内单个 POM 要 1.9 s）。
 - `gradle.properties` 已开 `daemon / parallel / caching / vfs.watch` + 2 GB 堆，增量构建 1~3 s。
