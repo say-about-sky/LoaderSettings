@@ -65,40 +65,35 @@ public final class WebBridge {
     }
 
     /**
-     * Fires a <b>normal</b> event by id.
-     *
-     * @param eventId  event id (the {@code id=...} value, not the file name)
-     * @param path     optional path relative to this plugin's resources dir
-     *                 (e.g. {@code event/event_demo.txt}); loaded first when the id is unknown
+     * 全局触发：在**所有** event 目录（原版 {@code game/events/**}、当前剧本的
+     * {@code .../events/**}，以及本插件 {@code resources/event/}）里按 id 查找，
+     * 找到就载入并触发。
      */
     @JavascriptInterface
-    public String event(String eventId, String path) {
-        String r = eventResult(WebGame.event(pluginId(), eventId, path), eventId);
-        return r;
+    public String event(String eventId) {
+        return eventResult(WebGame.event(pluginId(), eventId), eventId);
     }
 
-    /** Searches the six vanilla event tables. */
+    /** 指定 path（目录）下的 event 目录：按 id 查找 → 载入 → 触发。 */
     @JavascriptInterface
-    public String findEvent(String eventId) {
-        return WebGame.findEvent(eventId);
+    public String findEvent(String eventId, String path) {
+        return eventResult(WebGame.findEvent(eventId, path), eventId);
     }
 
     /**
-     * Fires a <b>mission event</b> (files under the extra folders).
-     *
-     * @param assetPath game asset path, e.g.
-     *                  {@code game/missions/missionsEvents/administrative_buildings.txt};
-     *                  empty = locate the file by id
+     * 全局触发任务事件：在**所有** MissionsEvent 目录（{@code game/missions/missionsEvents}、
+     * 当前剧本 {@code .../missions/missionsEvents}、本插件 {@code resources/missions/missionsEvents}）
+     * 里按 id 查找 → 载入 → 触发。
      */
     @JavascriptInterface
-    public String missionsEvent(String eventId, String assetPath) {
-        return eventResult(WebGame.missionsEvent(eventId, assetPath), eventId);
+    public String missionsEvent(String eventId) {
+        return eventResult(WebGame.missionsEvent(pluginId(), eventId), eventId);
     }
 
-    /** Finds a mission event id under the extra folders (returns asset paths). */
+    /** 指定 path（目录）下的 MissionsEvent 目录：按 id 查找 → 载入 → 触发。 */
     @JavascriptInterface
-    public String findMissionsEvent(String eventId) {
-        return WebGame.findMissionsEvent(eventId);
+    public String findMissionsEvent(String eventId, String path) {
+        return eventResult(WebGame.findMissionsEvent(eventId, path), eventId);
     }
 
     /** Loads every txt found in the extra folders (optional convenience). */

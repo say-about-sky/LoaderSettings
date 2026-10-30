@@ -5,10 +5,8 @@ import java.io.File;
 import com.saysky.game.GameApi;
 
 /**
- * Web-facing adapter for the shared runtime API (package {@code com.saysky.game}).
- *
- * <p>Only adds the "path is relative to this plugin's resources dir" resolution the JS bridge
- * needs; everything else is a straight delegation so non-Web plugins get identical behaviour.</p>
+ * Web-facing adapter for {@link GameApi}: only adds the plugin-resources lookup used by the
+ * global searches, so JS and plain-Java plugins behave identically.
  */
 public final class WebGame {
 
@@ -27,59 +25,31 @@ public final class WebGame {
         return GameApi.console(command);
     }
 
-    /** Normal event: {@code relPath} (plugin resources) is loaded first when the id is unknown. */
-    public static String event(String pluginId, String eventId, String relPath) {
-        File file = null;
-        if (relPath != null && relPath.trim().length() > 0) {
-            File base = WebCore.pluginDataDir(pluginId);
-            if (base == null) {
-                return "rejected: plugin not registered";
-            }
-            file = resolveInside(base, relPath.trim());
-            if (file == null) {
-                return "rejected: path escapes plugin dir";
-            }
-            if (!file.isFile()) {
-                return "rejected: not found " + relPath;
-            }
-        }
-        return GameApi.event(eventId, file);
+    /** 全局：所有 event 目录 + 本插件 {@code resources/event/}。 */
+    public static String event(String pluginId, String eventId) {
+        return GameApi.event(eventId, pluginDir(pluginId));
     }
 
-    public static String missionsEvent(String eventId, String assetPath) {
-        return GameApi.missionsEvent(eventId, assetPath);
+    /** 指定 path（目录）下的 event 目录。 */
+    public static String findEvent(String eventId, String path) {
+        return GameApi.findEvent(eventId, path);
     }
 
-    public static String findEvent(String eventId) {
-        return GameApi.findEvent(eventId);
+    /** 全局：所有 MissionsEvent 目录 + 本插件 {@code resources/missions/missionsEvents/}。 */
+    public static String missionsEvent(String pluginId, String eventId) {
+        return GameApi.missionsEvent(eventId, pluginDir(pluginId));
     }
 
-    public static String findMissionsEvent(String eventId) {
-        return GameApi.findMissionsEvent(eventId);
+    /** 指定 path（目录）下的 MissionsEvent 目录。 */
+    public static String findMissionsEvent(String eventId, String path) {
+        return GameApi.findMissionsEvent(eventId, path);
     }
 
     public static String loadExtraEvents() {
         return GameApi.loadExtraEvents();
     }
 
-    private static File resolveInside(File base, String rel) {
-        try {
-            String r = rel.replace('\\', '/');
-            while (r.startsWith("/")) {
-                r = r.substring(1);
-            }
-            if (r.length() == 0 || r.contains("..")) {
-                return null;
-            }
-            String canonBase = base.getCanonicalPath();
-            File f = new File(base, r);
-            String canon = f.getCanonicalPath();
-            if (!canon.startsWith(canonBase + File.separator)) {
-                return null;
-            }
-            return f;
-        } catch (Throwable t) {
-            return null;
-        }
+    private static File pluginDir(String pluginId) {
+        return WebCore.pluginDataDir(pluginId);
     }
 }

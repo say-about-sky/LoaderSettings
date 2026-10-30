@@ -17,36 +17,63 @@ boolean GameApi.inGame();                          // 是否已载入存档（pl
 String  GameApi.status();                          // "inGame=true civ=GER(id=12) gold=1234 ... events=c/s/g/sc/ssc/gsc"
 String  GameApi.console(String command);           // -> InGame_Console.execute（"gold 100" / "gold=100" 都行）
 
-// —— 普通事件（原版事件表）——
-String  GameApi.event(String eventId, File file);          // file 可空；id 未知且给了文件则先解析注册再触发
-String  GameApi.findEvent(String eventId);                  // "events(index=12): J_xxx" / "not found: ...（searched N）"
+// —— 普通事件 event 目录（原版 game/events + 当前剧本 + 插件 resources/event）——
+String  GameApi.event(String eventId);                      // 全局：所有可能的 event 目录里按 id 查找 → 载入 → 触发
+String  GameApi.event(String eventId, File pluginResDir);   // 同上，额外搜 <pluginResDir>/event/
+String  GameApi.findEvent(String eventId, String path);     // 只在 path 下的 event 目录里找
 
-// —— 任务事件（附加事件目录）——
-String  GameApi.missionsEvent(String id, String assetPath); // assetPath 可空（空则按 id 自动定位）
-String  GameApi.findMissionsEvent(String id);               // 返回匹配的 asset 路径（可多条）
+// —— 任务事件 MissionsEvent 目录 ——
+String  GameApi.missionsEvent(String eventId);              // 全局：所有可能的 MissionsEvent 目录 → 载入 → 触发
+String  GameApi.missionsEvent(String eventId, File dir);    // 同上，额外搜 <dir>/missions/missionsEvents/
+String  GameApi.findMissionsEvent(String eventId, String path); // 只在 path 下的 MissionsEvent 目录里找
 
 // —— 兼容/辅助 ——
-String  GameApi.event(String eventId);              // = event(id, null)
 String  GameApi.loadEventFile(File file);           // 只注册不触发
 String  GameApi.loadEventFile(File baseDir, String relPath);
 String  GameApi.loadEventText(String[] lines, String label);
 String  GameApi.loadExtraEvents();                  // 批量扫描附加目录
 String  GameApi.findEvents(String query);           // 六表摘要 / 子串搜索
 boolean GameApi.hasEvent(String eventId);
-String  GameApi.VERSION;                            // "1.1.0"
+String  GameApi.VERSION;                            // "1.2.1"
 ```
+
+### `path` 前缀 `<game>`（显式声明游戏内部资源目录）
+
+`findEvent` / `findMissionsEvent` 的 `path` 支持用 `<game>` 前缀，按**游戏根/APK 的真实布局**书写：
+
+| 写法 | 归一化为 |
+|---|---|
+| `<game>/assets/game/events` | `game/events` |
+| `<game>/assets/game/events/common` | `game/events/common` |
+| `<game>/assets/game/missions/missionsEvents` | `game/missions/missionsEvents` |
+| `<game>/assets/map/Earth3/scenarios/TheGreatWar` | `map/Earth3/scenarios/TheGreatWar` |
+
+规则：去掉 `<game>` → 去掉前导 `assets/`（APK 内资源根）→ 得到资源内路径（与 `Event.txt` 里引用资源的写法一致）。
+不写前缀时，`path` 直接按资源内路径理解（`game/events`、`map/<地图>/scenarios/<剧本>`）；
+也接受单个 `.txt` 文件路径。归一化函数是公开的：`GameApi.normalizePath(path)`。
+`path` 为空/只有 `<game>` 时，退化为该 kind 的全局目录集合。
+
+### 错误处理
+
+四个接口都**不抛异常**：未读档 → `rejected: no active save`；找不到 → `rejected: not found '<id>' under <path>`
+（`<path>` 会附上归一化结果，如 `<game>/assets/game/events -> game/events`）；解析失败只写日志与控制台。
 
 返回值统一是 `queued(...)` 或 `rejected: ...`：
 真正执行在 **GL 线程**（`Gdx.app.postRunnable`），所以调用立即返回，效果在下一帧生效。
-`console` / `event` / `missionsEvent` 在**未读档**时一律 `rejected: no active save`；`loadEventFile*` / `find*` 与游戏状态无关，随时可调。
+`console` / `event` / `missionsEvent` 在**未读档**时一律 `rejected: no active save`；`loadEventFile*` / `findEvents` 与游戏状态无关，随时可调。
 
-### 任务事件目录（`missionsEvent` / `findMissionsEvent` / `loadExtraEvents` 共用）
+### 全局搜索的目录集合（`event(id)` / `missionsEvent(id)`）
 
 ```
-game/missions/missionsEvents/
-map/<地图>/scenarios/<剧本>/events/
-map/<地图>/scenarios/<剧本>/events/common|siege|global/
-map/<地图>/scenarios/<剧本>/missions/missionsEvents/
+event(id)：
+  game/events/  game/events/common/  game/events/siege/  game/events/global/
+  map/<地图>/scenarios/<剧本>/events{,/common,/siege,/global}/
+  <插件 resources>/event/
+
+missionsEvent(id)：
+  game/missions/missionsEvents/
+  map/<地图>/scenarios/<剧本>/missions/missionsEvents/
+  <插件 resources>/missions/missionsEvents/
 ```
 
 地图/剧本路径用运行时的 `Game.map.getFile_ActiveMap_Path()` + `EventsManager.loadScenarioEventsTag` 计算；
@@ -62,14 +89,19 @@ public void init(HotContext ctx) {
     // 1) 控制台
     GameApi.console("gold 100");
 
-    // 2) 普通事件：先给路径，id 不在表里时会自动加载
-    GameApi.event("event_demo.1", new File(ctx.dataDir(), "event/event_demo.txt"));
-    ctx.log(GameApi.findEvent("event_demo.1"));
+    // 2) 普通事件：全局按 id 查找（含本插件 resources/event）
+    GameApi.event("event_demo.1");
 
-    // 3) 任务事件（missionsEvents / 剧本 events）
-    GameApi.missionsEvent("J9MIad",
-            "game/missions/missionsEvents/administrative_buildings.txt");
-    ctx.log(GameApi.findMissionsEvent("J9MIad"));
+    //    只在本插件 resources/event 里找
+    GameApi.findEvent("event_demo.1", new File(ctx.dataDir(), "event").getAbsolutePath());
+
+    //    或者用 <game> 显式指向游戏内部资源目录
+    GameApi.findEvent("J_battle", "<game>/assets/game/events");
+
+    // 3) 任务事件：全局 / 指定目录
+    GameApi.missionsEvent("J9MIad");
+    GameApi.findMissionsEvent("J9MIad", "<game>/assets/game/missions/missionsEvents");
+    GameApi.findMissionsEvent("J9MIad", "<game>/assets/map/Earth3/scenarios/TheGreatWar");
 
     // 4) 状态
     if (GameApi.inGame()) {
@@ -77,6 +109,7 @@ public void init(HotContext ctx) {
     }
 }
 ```
+
 
 事件文件语法与官方 `game/events/common/*.txt` **完全一致**（同一套 `EventsManager.loadEvent` 解析器）：
 

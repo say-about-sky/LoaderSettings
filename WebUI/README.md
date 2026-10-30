@@ -76,20 +76,27 @@ AOH3.session();             // 当前弹窗会话 key
 AOH3.gameStatus();          // inGame=true civ=GER(id=12) gold=1234 ... events=c/s/g/sc/ssc/gsc
 AOH3.game('gold 100');      // 交给原版控制台 InGame_Console.execute（GL 线程执行）
 
-// —— 普通事件（原版事件表；文件在插件 resources 内，路径相对插件目录）——
-AOH3.event('event_demo.1', 'event/event_demo.txt');  // id 不在表里时先解析该文件再触发；path 可传 ''
-AOH3.findEvent('event_demo.1');                      // "events(index=3): event_demo.1" / "not found: ..."
+// —— 普通事件 event 目录（原版 game/events + 当前剧本 + 本插件 resources/event）——
+AOH3.event('event_demo.1');                          // 全局：所有可能的 event 目录里按 id 查找 → 载入 → 触发
+AOH3.findEvent('event_demo.1', '<game>/assets/game/events');  // 只在给定 path 下的 event 目录里找
 
-// —— 任务事件（missionsEvents / 剧本 events 目录；assetPath 可传 '' 自动按 id 查找）——
-AOH3.missionsEvent('J9MIad', 'game/missions/missionsEvents/administrative_buildings.txt');
-AOH3.findMissionsEvent('J9MIad');                    // 返回匹配的 asset 路径（可多条）
+// —— 任务事件 MissionsEvent 目录 ——
+AOH3.missionsEvent('J9MIad');                        // 全局：所有可能的 MissionsEvent 目录 → 载入 → 触发
+AOH3.findMissionsEvent('J9MIad', '<game>/assets/game/missions/missionsEvents');
+AOH3.findMissionsEvent('J9MIad', '<game>/assets/map/Earth3/scenarios/TheGreatWar');
 AOH3.loadExtraEvents();                              // 可选：批量扫描并注册上面所有附加目录
 ```
 
-- 附加事件目录（缺失就跳过，不会报错）：
-  `game/missions/missionsEvents/`、`map/<地图>/scenarios/<剧本>/events/`、
-  `.../events/common|siege|global/`、`.../missions/missionsEvents/`；地图/剧本用运行时
-  `Game.map.getFile_ActiveMap_Path()` + `EventsManager.loadScenarioEventsTag` 计算。
+- **`path` 支持 `<game>` 前缀**：显式声明「这是游戏内部资源目录」，按游戏根/APK 真实布局书写，
+  `<game>/assets/game/events` 会被归一化成 `game/events`（去掉 `<game>` 与前导 `assets/`）。
+  不写前缀时按资源内路径理解（`game/events`、`map/<地图>/scenarios/<剧本>`），也接受单个 `.txt`。
+- 四个事件接口都是「查找定位 → 载入（注册进原版事件表）→ 触发」，**都不抛异常**：
+  未读档 `rejected: no active save`；找不到 `rejected: not found '<id>' under <path>`
+  （附归一化结果，如 `<game>/assets/game/events -> game/events`）。
+- 全局搜索的目录集合（缺失就跳过，不会报错）：
+  `event(id)` = `game/events{,/common,/siege,/global}/` + `map/<地图>/scenarios/<剧本>/events/**` + 插件 `resources/event/`；
+  `missionsEvent(id)` = `game/missions/missionsEvents/` + `.../missions/missionsEvents/` + 插件 `resources/missions/missionsEvents/`；
+  地图/剧本用运行时 `Game.map.getFile_ActiveMap_Path()` + `EventsManager.loadScenarioEventsTag` 计算。
 - 注册用官方解析器 `EventsManager.loadEvent(0, lines)`（与 `game/events/**` 同一套）；缺 `trigger_` 的会自动补
   恒真触发器，缺 `option_btn` 的直接拒绝；同一 `id=` 重复载入会跳过。
 - 注册进表的这些事件**不参与每回合自动扫描**（不改 `iEventsSize`），只能用上面的接口显式触发。
