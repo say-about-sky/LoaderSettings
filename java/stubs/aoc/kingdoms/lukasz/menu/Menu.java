@@ -16,6 +16,9 @@ public class Menu {
     protected final void initMenu(MenuTitle menuTitle, int iPosX, int iPosY, int iWidth, int iHeight, List<MenuElement> menuElements, boolean visible, boolean closeable) {
     }
 
+    protected final void initMenu(MenuTitle menuTitle, int iPosX, int iPosY, int iWidth, int iHeight, List<MenuElement> menuElements, boolean visible, boolean initWithBackButton, boolean closeable, boolean lockHoverOverMenuBackground) {
+    }
+
     public int getPosX() {
         return 0;
     }
@@ -57,5 +60,69 @@ public class Menu {
     }
 
     public void actionCloseMenu() {
+    }
+
+    public void setPosX(int iPosX) {
+    }
+
+    public void setPosY(int iPosY) {
+    }
+
+    public void setHeight(int iHeight) {
+    }
+
+    public void setMenuPosX(int iMenuPosX) {
+    }
+
+    public void setMenuPosY(int iMenuPosY) {
+    }
+
+    public void setScrollPosY(int iScrollPosY) {
+    }
+
+    public final int getMenuElementsSize() {
+        return 0;
+    }
+
+    public final MenuElement getMenuElement(int iID) {
+        return null;
+    }
+
+    public final void setMenuElement(int iID, MenuElement nMenuElement) {
+    }
+
+    public final boolean getScrollableY() {
+        return false;
+    }
+
+    public final boolean getScrollableX() {
+        return false;
+    }
+
+    public final boolean getCloseable() {
+        return false;
+    }
+
+    public final boolean getMoveable() {
+        return false;
+    }
+
+    public final boolean getResizable() {
+        return false;
+    }
+
+    public void updateScrollable() {
+    }
+
+    public void updateMenuElements_IsInView() {
+    }
+
+    public void update() {
+    }
+
+    public void updateLanguage() {
+    }
+
+    public void dispose() {
     }
 }

@@ -10,6 +10,10 @@ public class BitmapFont {
         return null;
     }
 
+    public static class Glyph {
+        public int id;
+    }
+
     public static class BitmapFontData {
         public float scaleX = 1.0f;
         public float scaleY = 1.0f;
@@ -18,6 +22,11 @@ public class BitmapFont {
         }
 
         public void setScale(float scaleX, float scaleY) {
+        }
+
+        /** Real signature: returns the baked glyph or {@code null}. */
+        public Glyph getGlyph(char ch) {
+            return null;
         }
     }
 }

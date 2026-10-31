@@ -116,27 +116,36 @@ public final class WebCore {
         final String s = (text == null || text.length() == 0) ? "Web UI" : text;
         BUTTONS.put(id, new ButtonRequest(id, s, e, t));
         log("addMainMenuButton id=" + id + " text=" + s);
-        // Single UI path: the main-menu row is mounted by com.saysky.ui.UiHost, the same
-        // engine every hot plugin uses for its own pages/buttons.
+        // Single UI path: the main-menu row is mounted by the UI kit (com.saysky.ui.kit),
+        // whose mounting algorithm is a 1:1 port of the proven v1 engine (anchor row +
+        // shift + own iHeight growth + per-frame enforce).
         final String pid = id;
         final String fEntry = e;
         final String fTitle = t;
-        com.saysky.ui.UiHost.addButton(id, new com.saysky.ui.api.TextButtonSpec() {
-            @Override
-            public String pageId() {
-                return com.saysky.ui.api.Pages.MAIN_MENU.id();
-            }
-
-            @Override
-            public String label() {
-                return s;
-            }
-
-            @Override
-            public void onClick() {
-                WebCore.openDialog(pid, fEntry, fTitle);
-            }
-        });
+        try {
+            // Deferred creation: the element factory runs only when the target page is on
+            // screen (GL thread, fonts already baked). Creating native controls here would
+            // run before InitGame's font baking (hot loader cold-starts first).
+            com.saysky.ui.kit.Ui.unmountPlugin(id);
+            com.saysky.ui.kit.Ui.mount(id, com.saysky.ui.kit.Pages.MAIN, "LoadGame")
+                    .kind(com.saysky.ui.kit.UiMenu.SCROLL)
+                    .addRow(new com.saysky.ui.kit.UiMount.RowFactory() {
+                        @Override
+                        public aoc.kingdoms.lukasz.menu_element.MenuElement create(
+                                aoc.kingdoms.lukasz.menu.Menu target) {
+                            return new com.saysky.ui.kit.UiButton(s, 0)
+                                    .onClick(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            WebCore.openDialog(pid, fEntry, fTitle);
+                                        }
+                                    });
+                        }
+                    });
+            log("addMainMenuButton: ui kit mounted for " + s);
+        } catch (Throwable ex) {
+            log("addMainMenuButton: ui kit unavailable: " + ex);
+        }
         ensureTick();
     }
 

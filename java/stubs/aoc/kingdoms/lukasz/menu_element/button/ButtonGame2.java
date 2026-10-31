@@ -15,4 +15,7 @@ public class ButtonGame2 extends MenuElement {
 
     public ButtonGame2(String sText, int fontID, int iTextPositionX, int iPosX, int iPosY, int nWidth, boolean isClickable, int nHeight, boolean checkBox) {
     }
+
+    public ButtonGame2(String sText, int fontID, int iTextPositionX, int iPosX, int iPosY, int nWidth, boolean isClickable, boolean checkBox) {
+    }
 }

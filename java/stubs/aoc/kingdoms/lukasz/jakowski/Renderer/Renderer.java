@@ -11,6 +11,8 @@ public class Renderer {
     public static ShaderProgram shaderDefault;
     public static ShaderProgram shaderAlpha_Pattern;
     public static List<BitmapFont> fontMain;
+    /** Current language charset: every character the fonts were baked for. */
+    public static String charset;
     public static com.badlogic.gdx.utils.viewport.Viewport viewport;
 
     public static void drawBoxCorner(SpriteBatch oSB, int nPosX, int nPosY, int nWidth, int nHeight) {

@@ -5,6 +5,9 @@ public final class CFG {
     public static int PADDING;
     public static int FONT_REGULAR;
     public static int FONT_BOLD;
+    public static int FONT_REGULAR_SMALL;
+    public static int FONT_BOLD_SMALL;
+    public static float GUI_SCALE;
     public static int TEXT_HEIGHT;
     public static int BUTTON_HEIGHT;
     public static int BUTTON_WIDTH;

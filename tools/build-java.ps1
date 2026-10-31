@@ -43,7 +43,7 @@ if ($LASTEXITCODE -ne 0) { throw "jar failed" }
 # 3b) 插件编译用 API jar(只含公开 API:com\saysky\ui\api + UiHost + com\saysky\game;不含宿主实现)
 $apiJar = Join-Path $proj "out\ui-api.jar"
 if (Test-Path $apiJar) { Remove-Item $apiJar -Force }
-& $jarExe cf $apiJar -C $srcOut "com/saysky/ui/api" -C $srcOut "com/saysky/ui/UiHost.class" -C $srcOut "com/saysky/game/GameApi.class"
+& $jarExe cf $apiJar -C $srcOut "com/saysky/ui/api" -C $srcOut "com/saysky/ui/kit" -C $srcOut "com/saysky/ui/UiHost.class" -C $srcOut "com/saysky/game/GameApi.class"
 if ($LASTEXITCODE -ne 0) { throw "api jar failed" }
 Write-Host ("[java] 插件 API: out\ui-api.jar ({0} B)" -f (Get-Item $apiJar).Length)
 

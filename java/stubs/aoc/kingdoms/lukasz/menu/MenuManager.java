@@ -10,6 +10,31 @@ public class MenuManager {
     public void setViewID(View eView) {
     }
 
+    public int getViewID() {
+        return 0;
+    }
+
+    public int getViewID(View eView) {
+        return 0;
+    }
+
+    public void setViewIDWithoutAnimation(View eView) {
+    }
+
+    public void addToast_Error(String sText) {
+    }
+
+    public void addToast(String sText, int iFontID) {
+    }
+
+    public final int getActiveMenuElementID() {
+        return -1;
+    }
+
+    public final boolean getInGame() {
+        return false;
+    }
+
     public void addToast(String sText) {
     }
 
